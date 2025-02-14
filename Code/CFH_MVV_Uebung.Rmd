@@ -1,0 +1,958 @@
+---
+title: "Übung Multivariate Verfahren"
+author: "Janika Saretzki"
+date: "2025-01-23"
+output: 
+  html_document:
+    theme: cosmo # ALTERNATIVEN: darkly, flatly, journal, spacelab, sandstone, etc.
+    toc: true
+    toc_depth: 6
+---
+
+# Allgemeine Anmerkungen
+
+* `#`: Wird im R-Markdown-Text für Überschriften verwendet. Mehrere Ebenen können durch Hinzufügen weiterer Rauten erstellt werden.
+  
+* `**Wort**`: Wort wird **dick gedruckt** dargestellt.
+
+- `*Wort*`: Wort wird *kursiv* dargestellt.
+
+- Sonderzeichen können durch einen Backslash (`\`) "escapet" werden, damit sie als normale Zeichen erscheinen.
+
+```{r Setup, warning=FALSE, error=FALSE, include=FALSE}
+
+R.Version()
+R.version$version.string # R version 4.4.0 (2024-04-24)
+
+rm(list = ls())  # LEERT ENVIRONMENT
+
+options(scipen = 999) # Verwaltung SCIENTIFIC PENALTY
+# ALTERNATIVE: options(scipen = 0)
+
+options(repos = c(CRAN = "https://cloud.r-project.org")) # Setze CRAN MIRROR
+
+for (package in c("readxl", "ggplot2", "lme4", "lmerTest", "tidyverse", "writexl", "haven", "corrplot", "psych", "lavaan", "semPlot", "factoextra")) {
+  if (!require(package, character.only = TRUE, quietly = TRUE)) {  
+    install.packages(package)  
+  } else {
+    update.packages(package, ask = FALSE)  
+  }
+  library(package, character.only = TRUE, quietly = TRUE)  
+}
+
+getwd() # Anzeige WORKING DIRECTORY
+
+
+# setup = function(packages) {
+#   for (package in packages) {
+#     if (!require(package, character.only = TRUE, quietly = TRUE)) {
+#       tryCatch(
+#         {
+#           install.packages(package, dependencies = TRUE)
+#           library(package, character.only = TRUE, quietly = TRUE)
+#         },
+#         error = function(e) {
+#           message(paste("Error:", package))
+#           message(e)
+#         }
+#       )
+#     }
+#   }
+# }
+# 
+# packages <- c("readxl", "ggplot2", "lme4", "lmerTest")
+# setup(packages)
+
+```
+
+# Lineare Gemischte Modelle
+## Beispiel 1
+### Datensatz "LMM.xlsx"
+```{r GLM Beispiel 1 Data, error=FALSE, warning=FALSE}
+
+# install.packages("readxl")
+# library(readxl)
+
+lmm = read_excel("LMM.xlsx")
+
+head(lmm) # Zeigt erste Zeilen des Datensatzes "lmm"
+summary(lmm) # Statistische Zusammenfassung des Datensatzes "lmm" einschließlich Minimum, Median, Mittelwert, Maximum und Quartile für numerische Variablen
+
+# View(lmm) # Öffnet tabellarische Ansicht des Datensatzes "lmm" im RStudio Viewer
+
+str(lmm) # Zeigt Struktur des Datensatzes "lmm" einschließlich Variablentypen und ersten Beispieldaten)
+
+names(lmm) # Gibt Namen der Variablen (Spalten) des Datensatzes "lmm" aus
+
+unique(lmm$department) # Zeigt alle einzigartigen Werte der Variable "department"
+lapply(lmm[, c("department")], unique) # Funktion "lappy()": Wendet ausgewählte Funktion (z.B. "unique()") auf mehrere Variablen des Datensatzes an.
+
+```
+
+* **Hierarchische Struktur** der Daten: Jeder Dozent bzw. Dozentin (id) ist einer Abteilung (department) zugeordnet.
+* **Annahme: Die Abteilungen haben einen wesentlichen Einfluss auf das Gehalt (salary).**
+
+
+### Einfaches Lineares Modell
+
+$\rightarrow$ Einfaches Modell zur Schätzung durchschnittlicher Gehaltsunterschiede zwischen Abteilungen mittels fester Effekte (Fixed Effects Model)
+
+```{r Beispiel 1 Einfaches Lineares Modell, error=FALSE, warning=FALSE}
+
+model1 = lm(salary ~ department, lmm)
+summary(model1)
+
+qqnorm(resid(model1))
+shapiro.test(resid(model1))
+hist(resid(model1))
+
+```
+
+### Unconditional Random Effects Model (UREM)
+
+* Flexiblere Modellierung der Gehaltsunterschiede zwischen den Abteilungen als zufällige Effekte
+* **Random Intercept Modell ohne Prädiktor)**
+* Annahme: Jede Abteilung hat ein eigenes durchschnittliches Gehaltsniveau, das um den globalen Mittelwert variiert
+* Nutzen: Isolierung der reinen Gruppeneffekte als Grundlage für die spätere Einbeziehung individueller Prädiktoren [z.B. Berufserfahrung (experience)]
+
+```{r Beispiel 1 UREM, error=FALSE, warning=FALSE}
+
+# install.packages("lme4")
+# library(lme4)
+
+# install.packages("lmerTest")
+# library(lmerTest) 
+
+model2 = lmer(salary ~ 1 + (1|department), lmm)
+summary(model2)
+
+summary(model2)$coefficients # $coefficients um nur Fixed Effects zu zeigen
+
+VarCorr(model2) # Rohstruktur der Varianz-Kovarianz Matrix der Random Effects, beinhaltet lediglich Standardabweichungen 
+as.data.frame(VarCorr(model2)) # Legt vollständige Berechnungen (Varianz UND Standardabweichung) offen
+
+confint(model2, level = 0.95) # Output-Erweiterung: Konfidenzintervalle
+
+```
+
+#### Intra-Klassen-Korrelation (engl. Intra-Class-Correlation; ICC)
+* ICC berechnet den **Anteil der Gesamtvarianz, der durch Unterschiede zwischen den Abteilungen erklärt wird**
+* ICC = Varianz zwischen den Gruppen / Gesamtvarianz
+
+```{r Beispiel 1 ICC, warning=FALSE, error=FALSE}
+
+ICC_model2 = 221997992 / (221997992 + 25422058)
+ICC_model2
+
+```
+
+* 90% der Gesamtvarianz der Gehälter wird durch Unterschiede zwischen den Abteilungen erklärt
+* Restliche 10%? Erklärt durch andere Variablen (z.B. Unterschiede auf Individualebene, d.h. zwischen den Personen) und Fehler
+
+### Random Intercept Fixed Slope Model
+* Erweiterung der Analyse, um individuelle Merkmale [z.B. Berufserfahrung (experience)] als Prädiktoren zu berücksichtigen
+* Annahme: Berufserfahrung (experience) hat einen linearen Einfluss auf das Gehalt, der über alle Abteilungen hinweg konstant bleibt (Fixed Slope)
+* Nutzen: Kombination von individuellen Effekten (experience) und Gruppeneffekten (Abteilungsunterschiede, Random Intercept) zur differenzierten Analyse der Gehaltsunterschiede
+
+```{r Beispiel 1 Random Intercept Fixed Slope Modell, warning=FALSE, error=FALSE}
+
+model3 = lmer(salary ~ experience + (1|department), lmm)
+summary(model3)
+
+# REML durch ML ersetzen ...? 
+# model3 = lmer(salary ~ experience + (1|department), REML = FALSE, lmm)
+# summary(model3)
+
+summary(model3)$coefficients 
+confint(model3, level = 0.95)
+
+sqrt(221997992)
+
+```
+
+```{r Beispiel 1 Random Intercept Fixed Slope Model Plot, warning=FALSE, error=FALSE}
+
+# install.packages("ggplot2")
+# library(ggplot2)
+
+lmm$random.intercept.fixed.slope = predict(model3)
+
+ggplot(lmm, aes(x = experience, y = salary, color = department)) +
+  geom_point() +
+  geom_line(aes(y = random.intercept.fixed.slope)) +
+  labs(x = "Experience", y = "Salary", color = "Department") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), axis.line = element_line())
+
+```
+
+### Random Intercept Random Slope Model
+* Erweiterung: Modellierung sowohl der mittleren Gehälter (Random Intercepts) als auch des Einflusses der Berufserfahrung (Random Slopes) als abteilungsabhängige Effekte
+* Annahme: Die mittleren Gehälter variieren zwischen den Abteilungen UND der Einfluss der Berufserfahrung auf das Gehalt unterscheidet sich ebenfalls zwischen den Abteilungen
+
+```{r Beispiel 1 Random Intercept Random Slope Model, warning=FALSE, error=FALSE}
+
+model4 = lmer(salary ~ experience + (experience|department), lmm)
+summary(model4)
+
+summary(model4)$coefficients 
+confint(model4, level = 0.95)
+
+```
+
+```{r Beispiel 1 Random Intercept Random Slope Model Plot, warning=FALSE, error=FALSE}
+
+lmm$random.intercept.random.slope = predict(model4)
+
+ggplot(lmm, aes(x = experience, y = salary, color = department)) +
+  geom_point() +
+  geom_line(aes(y = random.intercept.random.slope)) +
+  labs(x = "Experience", y = "Salary", color = "Department") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), axis.line = element_line())
+
+```
+
+#### Chi-Quadrat-Likelihood Ratio Test
+```{r Beispiel 1 Modellvergleich, warning=FALSE, error=FALSE}
+
+# Model 3: Random Intercept, Fixed Slope
+# Model 4: Random Intercept, Random Slope
+
+anova(model3, model4)
+
+```
+
+### Fixed Intercept Random Slope Model
+* Der Intercept wird für alle Abteilungen als gleich angenommen (Fixed Intercept)
+* Der Einfluss der Berufserfahrung darf zwischen den Abteilungen variieren (Random Slope)
+
+**Warum ist dieses Modell nicht sinnvoll?**
+
+* Aus dem Random Intercept Fixed Slope Modell wissen wir, dass sich die Abteilungen im durchschnittlichen Gehalt (Intercept) unterscheiden. Die Annahme eines festen Intercepts für alle Abteilungen ist daher nicht realistisch.
+* Wenn die mittleren Gehälter der Abteilungen unterschiedlich sind, würde ein Modell mit festem Intercept wichtige Variabilität in den Daten ignorieren. Das Modell vernachlässigt daher die Heterogenität der Abteilungen hinsichtlich der mittleren Gehälter.
+
+```{r Beispiel 1 Fixed Intercept Random Slope, error=FALSE, warning=FALSE}
+
+model5 = lmer(salary ~ experience + (0 + experience | department), lmm)
+summary(model5)
+
+```
+
+```{r Beispiel 1 Fixed Intercept Random Slope Model Plot, warning=FALSE, error=FALSE}
+
+lmm$fixed.intercept.random.slope = predict(model5)
+
+ggplot(lmm, aes(x = experience, y = salary, color = department)) +
+  geom_point() +
+  geom_line(aes(y = fixed.intercept.random.slope)) +
+  labs(x = "Experience", y = "Salary", color = "Department") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), axis.line = element_line())
+
+```
+
+---
+
+## Beispiel 2
+### Datensatz "LMM_2.xlsx"
+```{r GLM Beispiel 2 Data, error=FALSE, warning=FALSE}
+
+# install.packages("readxl")
+# library(readxl)
+
+performance_initial = read_excel("LMM_2.xlsx")
+names(performance_initial)
+
+str(performance_initial)
+lapply(performance_initial[, c("training")], unique) # EXTRAKTION EINDEUTIGER WERTE EINER AUSWAHL AN VARIABLEN (HIER: VARIABLE "training" AUS DATENSATZ "LMM_2")
+
+head(performance_initial)
+
+# WIDE-FORMAT >> LONG-FORMAT
+
+# install.packages("tidyverse") # ÜBERTRAGEN IN SETUP-CHUNK
+# library(tidyverse) #ÜBERTRAGEN IN SETUP-CHUNK
+
+performance = pivot_longer(
+  data = performance_initial,
+  cols = c(performance_time0, performance_time1, performance_time2, 
+           performance_time3, performance_time4, performance_time5, 
+           performance_time6, performance_time7, performance_time8, 
+           performance_time9, performance_time10),    
+  names_to = "Time", # Der Name der ursprünglichen Spalten (z. B. "performance_time0") wird in eine neue Variable namens "Time" geschrieben.
+  names_prefix = "performance_time", # Der Präfix "performance_time" wird aus den Spaltennamen entfernt, sodass nur die Zeit (z. B. "0", "1", ...) übrig bleibt.
+  values_to = "Performance" # Die Werte in den ausgewählten Spalten werden in eine neue Spalte namens "Performance" geschrieben.
+)
+
+performance$Time = as.numeric(performance$Time)
+
+names(performance)
+head(performance)
+
+# install.packages("writexl")
+# library(writexl)
+
+writexl::write_xlsx(performance, "LMM_2_Long_Format.xlsx")
+
+```
+
+Die Daten haben eine **Längsschnittstruktur**, da für jede Person (subject) die Outcome-Variable (Performance, d.h. Sprintzeit) zu mehreren Zeitpunkten (Time) erfasst wurde. 
+
+$\rightarrow$ Diese Struktur ermöglicht es uns, die individuelle Entwicklung der Sprintleistung im Zeitverlauf zu analysieren.
+
+
+Zusätzlich enthalten die Daten zwei **Gruppierungsvariablen:**
+
+* Trainer 
+
+* Trainingsstatus 
+
+**Mögliche Fragestellungen: Wie verändert sich die Sprintzeit im Durchschnitt über die Zeit in Abhängigkeit von der Teilnahme an einem intensiven Intervalltraining?**
+
+**Mögliche Hypothese: Athleten in der Trainingsgruppe zeigen im Durchschnitt eine stärkere Abnahme der Sprintzeit über die Zeit als Athleten in der Kontrollgruppe.**
+
+
+### Einfaches Wachstumskurvenmodell (ohne Prädiktor)
+#### Random Intercept Fixed Slope Model
+**Annahme: Jeder Athlet eine individuelle Ausgangsleistung (Intercept, d.h. anfängliche Sprintzeit) hat, die um einen globalen Mittelwert streut, während die Wachstumsrate (Steigung, d.h. Verbesserung der Sprintzeit) für alle Athleten gleich bleibt.**
+
+$\rightarrow$ Einfacher Einstieg, da es individuelle Unterschiede im Ausgangspunkt (Intercept) berücksichtigt, ohne die Komplexität zusätzlicher Prädiktoren wie Trainingsstatus oder Trainer oder deren Interaktion einzubeziehen. Es erlaubt eine erste Einschätzung der zeitlichen Entwicklung der Sprintzeiten und der Variabilität zwischen den Athleten.
+
+```{r Beispiel 2 Einfaches Wachstumskurvenmodell Random Intercept Fixed Slope, warning=FALSE, error=FALSE}
+
+model6 = lmer(Performance ~ Time + (1|subject), performance)
+summary(model6)
+
+```
+
+
+```{r Beispiel 2 Einfaches Wachstumskurvenmodell Random Intercept Fixed Slope Plot, warning=FALSE, error=FALSE}
+
+performance$Random.Intercept.Fixed.Slope = predict(model6, re.form = NA)
+# Zusatzargument "re.form = NA" - GLOBALE STEIGUNG, keine individuelle STEIGUNG
+
+ggplot(performance, aes(x = Time, y = Performance, group = subject)) +
+  geom_point(size = 0.1) +  
+  geom_line(size = 0.1) +   
+  geom_line(aes(x = Time, y = Random.Intercept.Fixed.Slope), color = "black", size = 0.8) +  
+  labs(x = "Time", y = "Performance") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(),
+    legend.position = "none"
+  )
+
+```
+
+#### Random Intercept Random Slope Model
+
+```{r Beispiel 2 Einfaches Wachstumskurvenmodell Random Intercept Random Slope, error=FALSE, warning=FALSE}
+
+model7 = lmer(Performance ~ Time + (Time|subject), performance)
+summary(model7)
+
+```
+
+### Konditionales Wachstumskurvenmodell (mit Prädiktor)
+#### Random Intercept Random Slope Model (2 Gruppen)
+
+* Zusätzlicher Prädiktor: Beeinflusst **die Teilnahme an einem Training** die Sprintzeit über die Zeit?
+
+Das Modell berücksichtigt:
+
+* Random Intercept: Jede Person (subject) hat einen individuellen Ausgangswert (Intercept), der um den globalen Mittelwert streut.
+
+* Random Slope: Jede Person hat eine individuelle Wachstumsrate (Slope), die um die globale Steigung streut.
+
+* Training als fester Prädiktor: Das Modell testet, ob die Sprintzeit im Zeitverlauf durch die Teilnahme am Training beeinflusst wird. Die Variable Training hat zwei Ausprägungen: Training vs. Control
+
+```{r Konditionales Wachstumskurvenmodell Random Intercept Random Slope Model, error=FALSE, warning=FALSE}
+
+model8 = lmer(Performance ~ Time * training + (Time|subject), performance)
+summary(model8)
+
+```
+
+```{r Konditionales Wachstumskurvenmodell Random Intercept Random Slope Model Plot, error=FALSE, warning=FALSE}
+
+performance$Random.Intercept.Random.Slope = predict(model8, re.form = NA)
+
+ggplot(performance, aes(x = Time, y = Performance, group = subject)) +
+  geom_point(aes(color = training), size = 0.1) +
+  geom_line(aes(color = training), size = 0.1) +
+  geom_line(aes(x = Time, y = Random.Intercept.Random.Slope), color = "black", size = 1) +
+  stat_summary(fun = mean, aes(x = Time, y = Performance, group = training, color = training), geom = "line", linetype = "dashed", size = 1) +
+  labs(x = "Time", y = "Performance", color = "Group") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), axis.line = element_line(), legend.position = "bottom"
+  )
+
+```
+
+# Explorative Faktorenanalyse (EFA)
+```{r EFA Data, include=FALSE}
+
+# install.packages("haven")
+# library(haven)
+
+EFA = read_sav("EFA.sav")
+
+head(EFA, 10)
+
+names(EFA)
+
+```
+
+Fragestellung: Auf wie viele Faktoren lassen sich die Zusammenhänge zwischen den gegebenen neun Skalen zurückführen?
+
+## Stichprobenbeschreibung
+```{r EFA Stichprobenbeschreibung, error=FALSE, warning=FALSE}
+
+nrow(EFA) # Anzahl der Fälle insgesamt
+
+# Geschlecht
+table(EFA$SEX)
+
+str(EFA$SEX)
+
+EFA$SEX = as.factor(EFA$SEX)
+levels(EFA$SEX) = c("männlich", "weiblich")
+table(EFA$SEX)
+
+prop.table(table(EFA$SEX)) * 100
+round(prop.table(table(EFA$SEX)),3) * 100
+
+# Alter
+min(EFA$AGE)
+max(EFA$AGE)
+
+# EFA = EFA[EFA$AGE >= 18 & EFA$AGE <= 65, ]
+
+EFA = subset(EFA, select = -c(SEX, AGE))
+names(EFA)
+
+
+EFA = EFA %>%
+  rename(
+    V1 = Risikobereitschaft,
+    V2 = Impulsivität,
+    V3 = Verantwortungslosigkeit,
+    V4 = Aktivität,
+    V5 = Kontaktfreudigkeit,
+    V6 = Selbstbewusstsein,
+    V7 = Minderwertigkeit,
+    V8 = Schwermut,
+    V9 = Besorgtheit
+  )
+
+names(EFA)
+
+
+cor(EFA)
+cor(EFA[, c("V1", "V2", "V3", "V4", "V5", "V6")])
+cor(EFA[, grep("V[1-9]",names(EFA))])
+cor(EFA[, grep("^V[1-9]$",names(EFA))])
+
+round(cor(EFA), 2)
+
+# install.packages("corrplot")
+# library(corrplot)
+
+corrplot(cor(EFA), method = "color")
+
+# colorbrewer2.org
+corrplot(cor(EFA), method = "color", col = colorRampPalette(c("#c51b7d", "white", "#4d9221"))(200))
+
+```
+
+## Anwendungsvoraussetzungen
+```{r EFA Anwendungsvoraussetzungen, error=FALSE, warning=FALSE}
+
+# install.packages("psych")
+# library(psych)
+
+# KMO Kriterium (Kaiser-Meyer-Olkin Kriterium)
+KMO(EFA) # MSA = Measure of Sampling Adequacy
+
+# Bartlett-Test auf Sphärizität
+# H0: Korrelationsmatrix ist Einheitsmatrix
+cortest.bartlett(cor(EFA))
+
+```
+
+
+## Bestimmung der Anzahl der Faktoren
+```{r EFA Anzahl Faktoren, error=FALSE, warning=FALSE}
+
+# Zugang über EIGENWERTE
+
+# KAISER KRITERIUM 
+## Nur Faktorenwerte mit einem Eigenwert > 1 werden extrahiert
+eigen(cor(EFA))
+eigen(cor(EFA))$values
+
+# SCREE Plot
+psych::scree(cor(EFA))
+
+# PARALLELANALYSE
+fa.parallel(EFA, fm="ml")
+
+
+```
+
+## Faktorenrotation
+```{r EFA Rotation, error=FALSE, warning=FALSE}
+
+fa(EFA, nfactors = 3, fm = "ml", rotate = "promax")$loadings
+# Promax: Oblique Rotationsmethode; Faktoren sind nicht unkorreliert, d.h. nicht unabhängig voneinander
+
+```
+
+## Kommunalitäten
+```{r EFA Kommunalitäten, error=FALSE, warning=FALSE}
+
+fa(EFA, nfactors = 3, fm = "ml", rotate = "promax")$communalities
+
+```
+
+```{r EFA Praktische Anwendung, error=FALSE, warning=FALSE}
+
+fa_model = fa(EFA, nfactors = 3, fm = "ml", rotate = "promax")
+factor_scores = factor.scores(EFA, fa_model)
+
+EFA = cbind(EFA, factor_scores$scores)
+names(EFA)
+
+colnames(EFA)[colnames(EFA) == "ML1"] = "Faktor1"
+colnames(EFA)[colnames(EFA) == "ML2"] = "Faktor2"
+colnames(EFA)[colnames(EFA) == "ML3"] = "Faktor3"
+
+names(EFA)
+
+```
+
+# Konfirmatorische Faktorenanalyse (CFA)
+```{r CFA Data, include=FALSE}
+
+CFA = read_sav("CFA.sav")
+names(CFA)
+
+CFA = CFA %>%
+  rename(
+    V1 = Arithmetische_Kompetenz,
+    V2 = Figural_Induktives_Denken,
+    V3 = Wortbedeutung,
+    V4 = Langzeitgedächtnis
+  )
+
+names(CFA)
+
+```
+
+Hypothese: Die Zusammenhänge zwischen den Subtests **Arithmetische Kompetenz, Figural-Induktives Denken, Wortbedeutung** und **Langzeitgedächtnis** können mit einem Generalfaktor der Intelligenz erklärt werden.
+
+```{r CFA, error=FALSE, warning=FALSE}
+
+# install.packages("lavaan")
+# library(lavaan)
+
+# Schritt 1: Modell definieren 
+CFA_model = "Generalfaktor =~ V1 + V2 + V3 + V4" 
+
+# Schritt 2: CFA durchführen
+fit = cfa(CFA_model, data = CFA)
+
+# Schritt 3: Ergebnisse anzeigen
+summary(fit)
+
+# Erster Blick: Model Test User Model: Ergebnis n.s., d.h.: Die empirische Kovarianzmatrix entspricht in der Population der implizierten Kovariationsmatrix ("Model passt!")
+
+summary(fit, fit.measures = TRUE)
+# Indizes CFI, RMSEA und SRMR sind relevant
+## CFI = Comparative Fit Index
+## RMSEA = Root Mean Square Error of Approximation
+## SRMR = Standardized Root Mean Square Residual
+
+summary(fit, fit.measures = TRUE, standardized = TRUE)
+
+# install.packages("semPlot")
+# library(semPlot)
+
+semPaths(fit)
+semPaths(fit, "std", edge.label.cex = 1, layout = "tree", whatLabels = "std")
+
+```
+
+```{r CFA Messinvarianz, error=FALSE, warning=FALSE}
+
+names(CFA)
+# str(CFA$sex)
+CFA$sex = as.factor(CFA$sex)
+
+# Drei Stufen der Messinvarianz: Konfigural, Metrisch, Skalare
+
+# Konfigurale Messinvarianz
+## "Passt das Modell in beiden Gruppen überhaupt, also sind dieselben Items überhaupt in denselben Faktoren enthalten?"
+fit1 = cfa(CFA_model, data = CFA, group = "sex")
+
+# Metrische Messinvarianz
+## "Messen die Items den Faktor in beiden Gruppen gleich, also ist die Stärke mit der die Items auf einen Faktor laden, gleich?"
+fit2 = cfa(CFA_model, data = CFA, group = "sex", group.equal = "loadings")
+
+# Skalare Messinvarianz
+## "Haben die Gruppen vergleichbare "Startpunkte" in der Messung?"
+fit3 = cfa(CFA_model, data = CFA, group = "sex", group.equal = c("intercepts", "loadings"))
+
+# Messinvarianzprüfung (Modellvergleich)
+lavTestLRT(fit1, fit2, fit3)
+
+```
+
+
+# Clusteranalyse
+
+Es soll untersucht werden, ob sich Gruppen bzw. Typen an Personen identifizieren lassen, die sich hinsichtlich ihrer Giant-Three Persönlichkeitsprofile voneinander unterscheiden.
+
+**Big Three Model (Eysenck, 1994)**
+Drei grundlegende Persönlichkeitseigenschaften: Extraversion, Neurotizismus und Psychotizismus (siehe Datensatz zur EFA)
+```{r CA Data, include=FALSE}
+
+CA = read_sav("CA.sav")
+names(CA)
+head(CA)
+CA = subset(CA, select = -c(SEX, AGE))
+names(CA)
+
+head(CA)
+
+```
+
+```{r CA z-Transformation, warning=FALSE, error=FALSE}
+
+CA$P = scale(CA$P)
+CA$E = scale(CA$E)
+CA$N = scale(CA$N)
+
+head(CA)
+```
+
+## Agglomeratives Hierarchisches Clustering
+### Berechnung der (Un-)Ähnlichkeit - Distanzmatrix
+```{r CA Distanzmatrix, error=FALSE, warning=FALSE}
+
+# Berechnung der paarweisen Distanzen zwischen den Zeilen
+d = dist(CA, method = "euclidean")
+
+as.matrix(d)[1:4, 1:4]
+
+```
+
+### Durchführung des Clusteralgorithmus
+Inkl. Linkage, typischerweise: Complete-Linkage-Methode (Maximum-Clustering) oder Ward-Methode
+
+```{r CA Linkage, error=FALSE, warning= FALSE}
+
+hc = hclust(d, method = "ward.D2")
+# hc = hclust(d, method = "complete")
+hc
+
+# install.packages("factoextra")
+# library(factoextra)
+
+fviz_dend(hc, cex = 0.2) + coord_flip()
+
+```
+
+
+### Modellpassung
+Validierung: Wie gut spiegelt das Dendrogramm die tatsächlichen Daten wider?
+
+$\rightarrow$ Korrelation zwischen cophenetischer Distanz und den ursprünglichen Distanzen
+
+```{r CA Modellpassung, error=FALSE, warning=FALSE}
+
+coph = cophenetic(hc) # Cophenetische Distanzen des Dendrogramms werden berechnet
+cor(d, coph)
+
+```
+
+```{r CA Alternativen, error=FALSE, warning=FALSE}
+
+# hc = hclust(d, method = "complete") # Complete-Linkage (Maximum Distance)
+# coph = cophenetic(hc)
+# 
+# cor(coph, d)
+# 
+# 
+# 
+# hc = hclust(d, method = "single") # Single-Linkage (Minimum Distance)
+# coph = cophenetic(hc)
+# 
+# cor (coph, d)
+
+```
+
+Nun: Zuweisung der Fälle zu Clustern (Tatsächliche Benennung der Cluster)
+$\rightarrow$ Anzahl der Cluster k 
+
+### Wahl der optimalen Anzahl von Clustern
+#### Elbow-Methode 
+
+* Berechnung der Gesamt-Within-Cluster Summe der Quadrate (WSS) (misst, wie ähnlich die Datenpunkte innerhalb eines Clusters sind) für verschiedene k-Werte (k = Anzahl der Cluster)
+
+* Identifikation des "Knick" (Elbow), bei dem die WSS abflacht
+
+```{r CA Elbow-Methode, error=FALSE, warning=FALSE}
+
+elbow_plot = fviz_nbclust(x = CA, FUN = hcut, method = c("wss"))
+elbow_plot + geom_vline(xintercept = 3, linetype = 2, color = "black") 
+# Manuelle Festlegung der Clusteranzahl durch "xintercept"
+
+#
+
+k_optimal = which.max(diff(diff(elbow_plot$data$y))) + 1
+elbow_plot + geom_vline(xintercept = k_optimal, linetype = 2, color = "black")
+
+```
+
+#### Alternative: Silhouetten-Analyse
+Misst die Qualität eines Clusterings anhand der **Kohäsion** (d.h. des Zusammenhalts innerhalb eines Clusters) und der **Separation** (Trennung der Cluster).
+
+Silhouetten-Koeffizient von -1 bis +1: Werte nahe +1 deuten auf gut getrennte Cluster hin 
+
+```{r CA Silhouettenanalyse, error=FALSE, warning=FALSE}
+
+fviz_nbclust(x = CA, FUN = hcut, method = c("silhouette"))
+
+```
+
+$\rightarrow$ *k* = 2 ist der ideale Wert!
+
+### Zuweisung der Fälle zu den Clustern
+```{r CA Zuweisung der Fälle zu den Clustern, error=FALSE, warning=FALSE}
+
+# Dendrogramm nach k einfärben
+fviz_dend(hc, cex = 0.2, k = 2, color_labels_by_k = TRUE) + coord_flip()
+
+CA$cluster = cutree(hc, k = 2)
+names(CA)
+
+```
+
+### Clusterbeschreibung und Interpretation
+```{r CA Clusterbeschreibung und Interpretation, error=FALSE, warning=FALSE}
+
+# Deskriptivstatistiken der Cluster
+aggregate(CA[, c("P", "E", "N")], by = list(Cluster = CA$cluster), FUN = mean)
+aggregate(CA[, c("P", "E", "N")], by = list(Cluster = CA$cluster), FUN = sd)
+```
+
+**Cluster 1:** 
+
+* Psychotizismus: Leicht unterdurchschnittlich, also tendenziell wenig impulsiv aggressiv.
+
+* Extraversion: Eher überdurchschnittlich, also eher gesellig, energisch und gesprächig
+
+* Neurotizismus: Eher unterdurchschnittlich, also emotional stabil, ruhig und weniger anfällig für negative Emotionen.
+
+Mitglieder dieses Clusters sind tendenziell emotional stabil und gesellig, mit leicht unterdurchschnittlicher Impulsivität.
+
+**Cluster 2:**
+Psychotizismus: Überdurchschnittlich, also tendenziell impulsiver/aggressiver.
+
+Extraversion: Stark unterdurchschnittlich, also eher introvertiert, weniger gesellig und zurückhaltend.
+
+Neurotizismus: Stark überdurchschnittlich, also emotional instabil, anfällig für Stress und negative Emotionen.
+
+Mitglieder dieses Clusters sind eher introvertiert und emotional instabil, mit einer Tendenz zu impulsivem Verhalten.
+
+```{r CA Plot, error=FALSE, warning=FALSE}
+
+ggplot(CA, aes(x = as.factor(cluster), y = P)) + geom_boxplot() + labs(title = "Clusterunterschiede: Psychotizismus")
+
+ggplot(CA, aes(x = as.factor(cluster), y = E)) + geom_boxplot() + labs(title = "Clusterunterschiede: Extraversion")
+
+ggplot(CA, aes(x = as.factor(cluster), y = N)) + geom_boxplot() + labs(title = "Clusterunterschiede: Neurotizismus")
+
+```
+
+```{r CA Statistischer Vergleich, error=FALSE, warning=FALSE}
+
+t.test(P ~ cluster, data = CA)
+
+# # ANOVA
+# mod_P = lm(P ~ cluster, data = CA)
+# anova(mod_P)
+# 
+# # install.packages("emmeans")
+# library(emmeans)
+# 
+# CA$cluster = as.factor(CA$cluster)
+# 
+# emmeans(mod_P, pairwise ~ cluster, adjust = "bonferroni")
+
+t.test(E ~ cluster, data = CA)
+t.test(N ~ cluster, data = CA)
+
+```
+
+# Strukturgleichungsmodelle
+**PoliticalDemocracy** - Datensatz (Bollen, 1989) aus dem lavaan-Paket.
+
+Latente Variablen (Faktoren), die im Modell spezifiziert werden sollen:
+
+* **Demokratie im Jahr 1960** (dem60),
+
+* **Demokratie im Jahr 1965** (dem65) und die
+
+* **Industrielle Entwicklung im Jahr 1960** (ind60).
+
+Diese werden durch manifeste Variablen (Indikatoren) gemessen: 
+
+* dem60 wird durch die Indikatoren y1, y2, y3 und y4 repräsentiert,
+
+* dem65 wird durch die Indikatoren y5, y6, y7 und y8 repräsentiert,
+
+* ind60 wird durch die Indikatoren x1, x2 und x3 repräsentiert.
+
+?PoliticalDemocracy
+
+**Hypothese: Die industrielle Entwicklung im Jahr 1960 (ind60) beeinflusst sowohl die Demokratie im Jahr 1960 (dem60) als auch die Demokratie im Jahr 1965 (dem65).**
+
+Es wird zudem angenommen, dass die Demokratie im Jahr 1960 (dem60) einen Einfluss auf die Demokratie im Jahr 1965 (dem65) hat.
+
+```{r SEM Data, include=FALSE}
+
+PoliticalDemocracy
+head(PoliticalDemocracy)
+
+names(PoliticalDemocracy)
+
+```
+
+## Spezifizierung des Modells
+Zwei Hauptkomponenten des SEMs: 
+
+* **Messmodell** - Beschreibt die Beziehungen zwischen den latenten Variablen und ihren manifesten Indikatoren
+
+* **Strukturmodell** - Beschreibt die Beziehungen zwischen den latenten Variablen
+
+<font color='darkred'> Hinweis: In SEMs können die Residuen der Indikatoren miteinander korrelieren und müssen im Modell spezifiziert werden, um diesen zusätzlichen Zusammenhang im Modell zu berücksichtigen. </font> 
+
+```{r SEM Modell, error=FALSE, warning=FALSE}
+
+model = '
+
+# Messmodell
+
+ind60 =~ x1 + x2 + x3
+dem60 =~ y1 + y2 + y3 + y4
+dem65 =~ y5 + y6 + y7 + y8
+
+# Strukturmodell
+dem65 ~ ind60 + dem60
+dem60 ~ ind60
+
+# Residualkorrelationen
+y1 ~~ y5
+y2 ~~ y4 + y6
+y3 ~~ y7
+y4 ~~ y8
+y6 ~~ y8
+'
+
+```
+
+## Modell fitten
+```{r SEM Modell fitten, error=FALSE, warning=FALSE}
+
+fit = sem(model, data = PoliticalDemocracy)
+summary(fit, fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+
+```
+
+```{r SEM Plot, error=FALSE, warning=FALSE}
+
+semPaths(fit)
+
+semPaths(fit,
+         edge.color = "black", # Pfade in schwarz
+         edge.label.cex = 0.8, # Größe der Labelschrift
+         edge.width = 0.5, # Einheitliche Liniendicke,
+         layout = "tree", # Layout (Alternativen: circle, spring)
+         sizeMan = 6, # Größe der manifesten Variablen
+         sizeLat = 8, # Größe der latenten Variablen
+         whatLabels = "std")
+
+```
+
+## Anwendungsvoraussetzungen 
+```{r SEM Anwendungsvoraussetzungen, error=FALSE, warning=FALSE}
+
+pairs(PoliticalDemocracy[, 1:4]) # dem60
+# pairs(subset(PoliticalDemocracy, select = c("y1", "y2", "y3", "y4")))
+
+pairs(PoliticalDemocracy[, 5:8]) # dem65
+pairs(PoliticalDemocracy[, 9:11]) # ind60
+
+# Multikollinearität?
+## Determinante der Korrelationsmatrix
+cor_1 = cor(PoliticalDemocracy[, 1:4])
+det(cor_1)
+
+cor_2 = cor(PoliticalDemocracy[, 5:8])
+det(cor_2)
+
+cor_3 = cor(PoliticalDemocracy[, 9:11])
+det(cor_3)
+
+# Stichprobengröße
+nrow(PoliticalDemocracy)
+
+```
+
+# Mediation
+```{r Mediation Data, include=FALSE}
+
+FIE = read_sav("FIE.sav")
+names(FIE)
+
+# ABK = Abhängigkeitskognition
+# NSB = Negative Selbstbewertung
+# BDI = Beck-Depressions-Inventar (Ausprägung depressive Symptomatik)
+
+# FIE = Fragebogen irrationaler Einstellungen
+
+```
+
+**Annahme: Es wird angenommen, dass der Zusammenhang zwischen Abhängigkeitskognitionen und der Ausprägung der Depressivität durch die negative Selbstbewertung vermittelt wird.**
+
+Hypothese im Sinne einer vollständigen Mediation
+
+```{r Mediation Modell, error=FALSE, warning=FALSE}
+
+model <- ' # direct effect
+             BDI ~ c*ABK
+           # mediator
+             NSB ~ a*ABK
+             BDI ~ b*NSB
+           # indirect effect (a*b)
+             ab := a*b
+           # total effect
+             total := c + (a*b)
+         '
+
+set.seed(123)
+fit = sem(model, data = FIE, se = "bootstrap", bootstrap = 1000)
+summary(fit, fit.measures = TRUE, standardized = TRUE)
+
+```
+
+Der Zusammenhang zwischen Abhängigkeitskognitionen und der Ausprägung der Depressivität wird vollständig durch die negative Selbstbewertung vermittelt. Der direkte Effekte von Abhängigkeitskognitionen auf Depressivität ist nicht signifikant, während sowohl der Effekt von Abhängigkeitskognitionen auf die negative Selbstbewertung als auch der Effekt der negativen Selbstbewertung auf die Depressivität signifikant sind.
+
+Praktische Implikationen:
+z.B. Therapeutische Ansätze: Interventionen sollten gezielt die negativen Selbstbewertungen ansprechen und verändern, da sie den entscheidenden Faktor darstellen.
+
+Prävention: Menschen mit Abhängigkeitskognitionen könnten durch präventive Maßnahmen unterstützt werden, um negative Selbstbewertungen zu vermeiden und so das Risiko für Depressionen zu senken.
